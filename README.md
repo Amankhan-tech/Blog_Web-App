@@ -21,13 +21,13 @@ Once logged in, navigate with the user-friendly interface.
 The navigation bar provides seamless access to different sections:
 Home: Displays a recent blog post feed.
 Create Post: Compose new posts with a rich text editor.
-Your Posts: View and manage your authored posts.
 Features
 
 User Authentication:
 
 Secure registration and login with password hashing.
 Token-based authentication using JWT for secure sessions.
+
 Blog Management:
 
 Create, read, and update blog posts with ease.
@@ -47,11 +47,13 @@ Frontend:
 React.js: For building the user interface.
 React Router: For smooth navigation throughout the app.
 date-fns: For efficient date formatting.
+
 Backend:
 
 Express.js: For building the server-side application.
 Multer: For handling file uploads securely.
 MongoDB (via MongoDB Atlas): For storing data in a scalable database.
+
 Other Tools:
 
 JWT: For secure user authentication.
@@ -82,6 +84,6 @@ Overall, this project honed my skills and confidence in React.js, Express.js, an
 
 The most rewarding aspect was witnessing the website evolve into a functional and visually appealing platform. Every step, from reading documentation to debugging issues, enhanced my technical and problem-solving abilities.
 
-Final Thoughts
+Final Thoughts:
 
 I'm immensely proud to have built this project entirely on my own. It's a testament to the power of independent learning and the satisfaction of bringing an idea to life. I'm excited to explore the endless possibilities for expanding and refining this blog platform.
