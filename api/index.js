@@ -20,7 +20,6 @@ const secret = process.env.JWT_SECRET || 'fallback_secret';
 
 const uploadMiddleware = multer({ dest: 'uploads/' });
 
-
 // Middleware
 app.use(cors({ origin: process.env.FRONTEND_URL, credentials: true }));
 app.use(express.json({ limit: '10kb' }));
@@ -28,30 +27,35 @@ app.use(cookieParser());
 app.use(mongoSanitize());
 app.use('/uploads', express.static(__dirname + '/uploads'));
 
-// Rate limiting
+// Rate limiting for API endpoints
 const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100 });
-app.use(limiter);
+app.use('/api', limiter);
 
 // MongoDB Connection
 mongoose.connect(process.env.MONGODB_URI || "your-default-mongodb-uri");
 
+// Token Verification Middleware
+const verifyToken = (req, res, next) => {
+  const { token } = req.cookies;
+  if (!token) {
+    return res.status(401).json({ error: "Unauthorized: Token is required" });
+  }
+  jwt.verify(token, secret, {}, (err, info) => {
+    if (err) {
+      return res.status(403).json({ error: "Invalid token" });
+    }
+    req.user = info;
+    next();
+  });
+};
+
 // Error Handling Middleware
 app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ error: 'Internal server error' });
-});
-
-// CORS headers middleware
-app.use((req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", "http://localhost:3000");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  res.setHeader("Access-Control-Allow-Credentials", "true");
-  next();
+  console.error("Error:", err.message);
+  res.status(err.status || 500).json({ error: err.message || "Internal Server Error" });
 });
 
 // Routes
-
 app.post("/register", async (req, res) => {
   const { username, password } = req.body;
   try {
@@ -61,181 +65,100 @@ app.post("/register", async (req, res) => {
     });
     res.json(userDoc);
   } catch (e) {
-    console.log(e);
+    console.error(e);
     res.status(400).json(e);
   }
 });
 
-
-
 app.post("/login", async (req, res) => {
   const { username, password } = req.body;
   const userDoc = await User.findOne({ username });
-  const passOk = bcrypt.compareSync(password, userDoc.password);
-  if (passOk) {
-    //logged in
-    jwt.sign({ username, id: userDoc._id }, secret, {}, (err, token) => {
-      if (err) throw err;
-      res.cookie("token", token).json({
-        id: userDoc._id,
-        username,
-      });
-    });
-  } else {
-    res.status(400).json("Wrong Credentials");
+  if (!userDoc) {
+    return res.status(404).json({ error: "User not found" });
   }
+  const passOk = bcrypt.compareSync(password, userDoc.password);
+  if (!passOk) {
+    return res.status(400).json({ error: "Invalid credentials" });
+  }
+  jwt.sign({ username, id: userDoc._id }, secret, {}, (err, token) => {
+    if (err) throw err;
+    res.cookie("token", token).json({
+      id: userDoc._id,
+      username,
+    });
+  });
 });
 
-app.get("/profile", (req, res) => {
-  const { token } = req.cookies;
-  jwt.verify(token, secret, {}, (err, info) => {
-    if (err) throw err;
-    res.json(info);
-  });
+app.get("/profile", verifyToken, (req, res) => {
+  res.json(req.user);
 });
 
 app.post("/logout", (req, res) => {
   res.cookie("token", "").json("ok");
 });
 
-
 const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/gif'];
 const fileSizeLimit = 5 * 1024 * 1024; // 5 MB
 
-app.post("/post", uploadMiddleware.single("file"), async (req, res) => {
-
+app.post("/post", uploadMiddleware.single("file"), verifyToken, async (req, res) => {
+  const { originalname, path, mimetype, size } = req.file;
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
   }
-  if (!allowedMimeTypes.includes(req.file.mimetype)) {
+  if (!allowedMimeTypes.includes(mimetype)) {
     return res.status(400).json({ error: 'Invalid file type' });
   }
-  if (req.file.size > fileSizeLimit) {
+  if (size > fileSizeLimit) {
     return res.status(400).json({ error: 'File size exceeds limit' });
   }
 
+  const parts = originalname.split(".");
+  const ext = parts[parts.length - 1];
+  const newPath = path + "." + ext;
+
+  fs.renameSync(path, newPath);
+
+  const { title, summary, content } = req.body;
+  if (!title || !summary || !content) {
+    return res.status(400).json({ error: "All fields are required" });
+  }
+
   try {
-    // Check if the file was uploaded
-    if (!req.file) {
-      return res.status(400).json({ error: "No file uploaded" });
-    }
-
-    const { originalname, path } = req.file;
-    const parts = originalname.split(".");
-    const ext = parts[parts.length - 1];
-    const newPath = path + "." + ext;
-
-    // Rename the uploaded file
-    fs.renameSync(path, newPath);
-
-    const { token } = req.cookies;
-
-    // Verify the JWT token
-    jwt.verify(token, secret, {}, async (err, info) => {
-      if (err) {
-        return res.status(401).json({ error: "Unauthorized: Invalid token" });
-      }
-
-      // Extract form data
-      const { title, summary, content } = req.body;
-
-      // Validate the input fields
-      if (!title || !summary || !content) {
-        return res.status(400).json({ error: "All fields are required" });
-      }
-
-      try {
-        // Create the post
-        const postDoc = await Post.create({
-          title,
-          summary,
-          content,
-          cover: newPath,
-          author: info.id,
-        });
-
-        // Respond with the created post
-        return res.json(postDoc);
-      } catch (postError) {
-        console.error("Error creating post:", postError);
-        return res.status(500).json({ error: "Failed to create the post" });
-      }
-    });
-  } catch (error) {
-    console.error("Error handling the request:", error);
-    res
-      .status(500)
-      .json({ error: "An error occurred while processing the request" });
-  }
-});
-
-
-
-app.put('/post', uploadMiddleware.single("file"), async (req, res) => {
-  let newPath = null;
-  if (req.file) {
-    const { originalname, path } = req.file;
-    const parts = originalname.split(".");
-    const ext = parts[parts.length - 1];
-    newPath = path + "." + ext;
-
-    // Rename the uploaded file
-    fs.renameSync(path, newPath);
-  }
-
-  const { token } = req.cookies;
-
-  // Verify the JWT token
-  jwt.verify(token, secret, {}, async (err, info) => {
-    if(err) throw err;
-    const {id,title,summary,content} = req.body;
-    const postDoc = await Post.findById(id);
-    const isAuthor = JSON.stringify(postDoc.author) === JSON.stringify(info.id);
-    if(!isAuthor) {
-      return res.status(400).json('You are not author');
-    }
-
-    await postDoc.set({
+    const postDoc = await Post.create({
       title,
       summary,
       content,
-      cover: newPath?newPath : postDoc.cover,
+      cover: newPath,
+      author: req.user.id,
     });
-    await postDoc.save();
     res.json(postDoc);
-  });
-
+  } catch (error) {
+    console.error("Error creating post:", error);
+    res.status(500).json({ error: "Failed to create the post" });
+  }
 });
 
-
-
 app.get("/post", async (req, res) => {
-  const posts = await Post.find().populate("author", ["username"]).sort({createdAt: -1}).limit(20);
+  const posts = await Post.find().populate("author", ["username"]).sort({ createdAt: -1 }).limit(20);
   res.json(posts);
 });
 
-
-
 app.get('/post/:id', async (req, res) => {
   const { id } = req.params;
-
-  // Check if `id` is a valid ObjectId
   if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ error: 'Invalid post ID' });
+    return res.status(400).json({ error: 'Invalid post ID' });
   }
 
   try {
-      // Fetch the post document if the ID is valid
-      const postDoc = await Post.findById(id).populate('author', ['username']);
-      if (!postDoc) {
-          return res.status(404).json({ error: 'Post not found' });
-      }
-      res.json(postDoc);
+    const postDoc = await Post.findById(id).populate('author', ['username']);
+    if (!postDoc) {
+      return res.status(404).json({ error: 'Post not found' });
+    }
+    res.json(postDoc);
   } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: 'Server error' });
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
-// Start Server
 app.listen(4000, () => console.log('Server running on port 4000'));
