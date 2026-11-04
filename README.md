@@ -21,7 +21,7 @@ Whether you're a writer, an enthusiast, or a learner, this platform is your go-t
 - Session management powered by **JWT-based authentication**.  
 
 ### 🖋️ **Content Management**  
-- Create, view, and update blog posts with ease.  
+- Create, view, update and delete blog posts with ease.  
 - Built-in **rich text editor** for crafting and formatting posts.  
 - Posts are displayed with **titles, summaries, and timestamps**.  
 
@@ -31,7 +31,7 @@ Whether you're a writer, an enthusiast, or a learner, this platform is your go-t
 
 ### ✍️ **Author-Specific Posts**  
 - Posts are tied to their authors.  
-- Only authors can edit their own content.  
+- Only authors can edit or delete their own content.  
 
 ---
 
@@ -40,26 +40,48 @@ Whether you're a writer, an enthusiast, or a learner, this platform is your go-t
 ### **Frontend**  
 - ⚛️ **React.js**: Interactive user interface.  
 - 🔗 **React Router**: For smooth navigation.  
+- 🖋️ **React Quill**: Rich text editor.  
 - 🕒 **date-fns**: For elegant date formatting.  
+- 🧼 **DOMPurify**: Cleans post HTML before it's shown.  
 
 ### **Backend**  
 - 🚀 **Express.js**: Fast and modular backend framework.  
 - 📦 **Multer**: Secure and efficient file uploads.  
-- 🗄️ **MongoDB Atlas**: Scalable cloud database.  
+- 🗄️ **MongoDB Atlas + Mongoose**: Scalable cloud database.  
 
 ### **Security and Tools**  
-- 🔑 **JWT**: Token-based user authentication.  
-- 🔒 **bcrypt**: For securely hashing passwords.  
+- 🔑 **JWT** in an `httpOnly` cookie: Token-based user authentication.  
+- 🔒 **bcrypt** + **zxcvbn**: Hashed passwords and password-strength checks.  
+- 🪖 **helmet**, **express-rate-limit**, **sanitize-html**: Security headers, brute-force protection and XSS protection.  
 - 🌍 **dotenv**: For managing environment variables.  
-- 🌐 **CORS**: Configured for safe cross-origin requests.  
+- 🧪 **node:test**, **supertest**, **mongodb-memory-server**, **React Testing Library**: Automated tests.  
+
+---
+
+## **📁 Project Structure**  
+
+```
+├── api/                 Express backend
+│   ├── index.js         Server, routes and security middleware
+│   ├── models/          Mongoose models (User, Post)
+│   ├── test/            API tests
+│   └── uploads/         Uploaded cover images (created automatically, not in git)
+├── client/              React frontend (Create React App)
+│   └── src/
+│       ├── api.js       API address + fetch helper
+│       ├── pages/       Index, Login, Post, Create, Edit pages
+│       └── App.test.js  Frontend tests
+├── .env.example         Template for the backend's .env
+└── package.json         Backend dependencies and scripts
+```
 
 ---
 
 ## **🚀 Getting Started**  
 
 ### **⚙️ Prerequisites**  
-1. 🛠️ Install **Node.js** on your machine.  
-2. 🗄️ Set up **MongoDB Atlas** or a local MongoDB instance.  
+1. 🛠️ **Node.js 20.19 or newer** (check with `node -v`).  
+2. 🗄️ A **MongoDB Atlas** cluster or a local MongoDB instance.  
 
 ### **🔧 Installation and Setup**  
 
@@ -69,40 +91,59 @@ Whether you're a writer, an enthusiast, or a learner, this platform is your go-t
    cd Blog_Web-App
    ```  
 
-2. Install backend dependencies:  
+2. Install backend dependencies (from the repo root):  
    ```bash
    npm install
    ```  
 
-3. Set up environment variables:  
-   Create a `.env` file in the root directory and add the following:  
+3. Set up environment variables: copy `.env.example` to `.env` in the repo root (or in `api/`) and fill in at least:  
    ```env
-   PORT=4000  
-   FRONTEND_URL=http://localhost:3000  
-   MONGODB_URI=<your-mongodb-connection-string>  
-   JWT_SECRET=<your-jwt-secret>  
+   MONGODB_URI=<your-mongodb-connection-string>
+   JWT_SECRET=<a-long-random-string>
    ```  
-
-4. Start the backend server:  
+   Generate a good secret with:  
    ```bash
+   node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+   ```  
+   Optional settings (`PORT`, `FRONTEND_URL`, production options) are explained in `.env.example`. The server refuses to start if a required value is missing.  
+
+4. Start the backend server (from the repo root):  
+   ```bash
+   npm start        # or `npm run dev` to restart automatically on code changes
+   ```  
+   You should see `Server running on port 4000`.  
+
+5. In a second terminal, install and start the React frontend:  
+   ```bash
+   cd client
+   npm install
    npm start
    ```  
-
-5. Navigate to the `client` folder for the React frontend:  
-   ```bash
-   cd client  
-   npm install  
-   npm start  
-   ```  
+   To use an API that isn't on `http://localhost:4000`, copy `client/.env.example` to `client/.env` and set `REACT_APP_API_URL`.  
 
 6. Open your browser and visit 👉 **[http://localhost:3000](http://localhost:3000)**.  
+
+### **🧪 Running Tests**  
+
+From the repo root:  
+```bash
+npm test               # API tests (uses a temporary in-memory MongoDB)
+npm run test:client    # React tests
+npm run test:all       # both
+```  
+The first `npm test` downloads a MongoDB binary (~100 MB) for the in-memory database. The tests never touch the database in your `.env`.  
 
 ---
 
 ## **🔒 Security Measures**  
-- 🌐 **CORS Policy**: Ensures only authorized frontend requests are processed.  
-- 🔑 **Password Security**: User passwords are hashed with `bcrypt`.  
-- ✅ **Input Validation**: Protects against injection attacks and data corruption.  
+- 🌐 **CORS Policy**: Only the configured frontend (`FRONTEND_URL`) can make logged-in requests.  
+- 🔑 **Password Security**: Passwords are hashed with `bcrypt`, must be 8–72 characters and pass a strength check.  
+- 🍪 **Secure Sessions**: Login tokens live in an `httpOnly`, `SameSite` cookie and expire after 7 days.  
+- 🧼 **XSS Protection**: Post HTML is sanitized when saved and again before it's displayed.  
+- 🚦 **Rate Limiting**: Repeated failed logins/registrations from one IP are blocked for 15 minutes.  
+- 🖼️ **Safe Uploads**: Only real JPEG/PNG/GIF files up to 5 MB, uploaded by logged-in users, are accepted.  
+- ✅ **Input Validation**: Usernames, post fields and IDs are validated; MongoDB operator injection is blocked.  
+- ✍️ **Ownership Checks**: Only a post's author can edit or delete it.  
 
 ---
 
