@@ -1,7 +1,27 @@
 import { useContext, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { formatISO9075 } from "date-fns";
+import DOMPurify from "dompurify";
 import { UserContext } from "../UserContext";
+
+// Only allow embedded videos from these sites; drop any other iframe.
+const ALLOWED_IFRAME_HOSTS = ["www.youtube.com", "www.youtube-nocookie.com", "player.vimeo.com"];
+DOMPurify.addHook("uponSanitizeElement", (node, data) => {
+  if (data.tagName !== "iframe") return;
+  let host = "";
+  try {
+    host = new URL(node.getAttribute("src") || "").hostname;
+  } catch {}
+  if (!ALLOWED_IFRAME_HOSTS.includes(host)) node.parentNode?.removeChild(node);
+});
+
+// Posts are also cleaned by the server when saved; this protects against
+// anything stored before that (or any future server bug).
+const cleanHtml = (html) =>
+  DOMPurify.sanitize(html || "", {
+    ADD_TAGS: ["iframe"],
+    ADD_ATTR: ["allowfullscreen", "frameborder", "target"],
+  });
 
 export default function PostPage() {
   const [postInfo, setPostInfo] = useState(null);
@@ -73,7 +93,7 @@ export default function PostPage() {
       </div>
       <div
         className="content"
-        dangerouslySetInnerHTML={{ __html: postInfo.content }}
+        dangerouslySetInnerHTML={{ __html: cleanHtml(postInfo.content) }}
       />
     </div>
   );
