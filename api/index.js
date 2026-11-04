@@ -66,7 +66,9 @@ const asyncHandler = (fn) => (req, res, next) => Promise.resolve(fn(req, res, ne
 // ---------------------------------------------------------------------------
 // Always resolve relative to this file so uploads land in api/uploads no matter
 // which folder the server is started from.
-const UPLOAD_DIR = path.join(__dirname, 'uploads');
+const UPLOAD_DIR = process.env.UPLOAD_DIR
+  ? path.resolve(process.env.UPLOAD_DIR)
+  : path.join(__dirname, 'uploads');
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const MIME_EXTENSIONS = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif' };
@@ -214,7 +216,7 @@ const rateLimitOptions = { windowMs: 15 * 60 * 1000, standardHeaders: 'draft-7',
 app.use(rateLimit({ ...rateLimitOptions, limit: 300 }));
 const authLimiter = rateLimit({
   ...rateLimitOptions,
-  limit: 10,
+  limit: Number(process.env.AUTH_RATE_LIMIT) || 10,
   skipSuccessfulRequests: true, // only failed attempts count toward the limit
   message: { error: 'Too many attempts. Please try again in 15 minutes.' },
 });
@@ -424,12 +426,18 @@ app.use((err, req, res, next) => {
 // ---------------------------------------------------------------------------
 // Start
 // ---------------------------------------------------------------------------
-mongoose
-  .connect(MONGODB_URI)
-  .then(() => {
-    app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-  })
-  .catch((err) => {
-    console.error('Failed to connect to MongoDB:', err.message);
-    process.exit(1);
-  });
+// Only connect and listen when run directly (`npm start`). Tests import the
+// app instead and manage their own database connection.
+if (require.main === module) {
+  mongoose
+    .connect(MONGODB_URI)
+    .then(() => {
+      app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+    })
+    .catch((err) => {
+      console.error('Failed to connect to MongoDB:', err.message);
+      process.exit(1);
+    });
+}
+
+module.exports = app;
