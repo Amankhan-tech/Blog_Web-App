@@ -1,28 +1,50 @@
 import { useContext, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { formatISO9075 } from "date-fns";
 import { UserContext } from "../UserContext";
 
 export default function PostPage() {
   const [postInfo, setPostInfo] = useState(null);
   const { userInfo } = useContext(UserContext);
+  const [error, setError] = useState("");
   const { id } = useParams();
+  const navigate = useNavigate();
+
   useEffect(() => {
-    fetch(`http://localhost:4000/post/${id}`).then((response) => {
-      response.json().then((postInfo) => {
-        setPostInfo(postInfo);
-      });
-    });
+    fetch(`http://localhost:4000/post/${id}`)
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Failed to load post");
+        setPostInfo(data);
+      })
+      .catch((err) => setError(err.message));
   }, [id]);
 
+  async function deletePost() {
+    if (!window.confirm("Delete this post? This cannot be undone.")) return;
+    const response = await fetch(`http://localhost:4000/post/${id}`, {
+      method: "DELETE",
+      credentials: "include",
+    });
+    if (response.ok) {
+      navigate("/");
+    } else {
+      const data = await response.json().catch(() => ({}));
+      alert(data.error || "Failed to delete post");
+    }
+  }
+
+  if (error) return <div className="post-page">{error}</div>;
   if (!postInfo) return "";
+
+  const isAuthor = userInfo?.id && userInfo.id === postInfo.author?._id;
 
   return (
     <div className="post-page">
       <h1>{postInfo.title}</h1>
       <time> {formatISO9075(new Date(postInfo.createdAt))} </time>
-      <div className="author">by {postInfo.author.username}</div>
-      {userInfo.id === postInfo.author._id && (
+      <div className="author">by {postInfo.author?.username || "Unknown Author"}</div>
+      {isAuthor && (
         <div className="edit-row">
           <Link className="edit-btn" to={`/edit/${postInfo._id}`}>
             <svg
@@ -41,9 +63,11 @@ export default function PostPage() {
             </svg>
             Edit this post
           </Link>
+          <button type="button" className="delete-btn" onClick={deletePost}>
+            Delete this post
+          </button>
         </div>
       )}
-      ;
       <div className="image">
         <img src={`http://localhost:4000/${postInfo.cover}`} alt="" />
       </div>
