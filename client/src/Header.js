@@ -1,56 +1,38 @@
-import { useContext, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { useContext } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { UserContext } from "./UserContext";
 
 export default function Header() {
-  const {setUserInfo, userInfo} = useContext(UserContext);
-  useEffect(() => {
-    fetch('http://localhost:4000/profile', {
-      credentials: 'include',
-    })
-      .then(response => {
-        if (!response.ok) {
-          throw new Error(`HTTP error! Status: ${response.status}`);
-        }
-        return response.json();
-      })
-      .then(userInfo => {
-        setUserInfo(userInfo)
-      })
-      .catch(error => {
-        console.error("Error fetching user profile:", error);
-      });
-  }, []);
+  const { userInfo, logout } = useContext(UserContext);
+  const navigate = useNavigate();
+  const username = userInfo?.username;
 
-  function Logout() {
-    fetch('http://localhost:4000/logout', {
-      credentials: 'include',
-      method: 'POST',
-    });
-    setUserInfo(null);
+  async function handleLogout() {
+    await logout();
+    navigate("/");
   }
 
-  const username = userInfo?.username; 
-
-    return(
-        <header>
-        <Link to="/" className="logo">
-          My Blog
-        </Link>
-        <nav>
-          {username && (
-            <>
-              <Link to="/create">Create new post</Link>
-              <a onClick={Logout}>LogOut</a>
-            </>
-          )}
-          {!username && (
-            <>
-              <Link to="/login">Login</Link>
-              <Link to="/register">Register</Link>
-            </>
-          )}
-        </nav>
-      </header>
-    )
+  return (
+    <header>
+      <Link to="/" className="logo">
+        My Blog
+      </Link>
+      <nav>
+        {username ? (
+          <>
+            <span className="greeting">Hi, {username}</span>
+            <Link to="/create">Create new post</Link>
+            <button type="button" className="link-button" onClick={handleLogout}>
+              Logout
+            </button>
+          </>
+        ) : (
+          <>
+            <Link to="/login">Login</Link>
+            <Link to="/register">Register</Link>
+          </>
+        )}
+      </nav>
+    </header>
+  );
 }

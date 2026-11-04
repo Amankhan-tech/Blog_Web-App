@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { formatISO9075 } from "date-fns";
 import DOMPurify from "dompurify";
 import { UserContext } from "../UserContext";
+import { apiFetch, imageUrl } from "../api";
 
 // Only allow embedded videos from these sites; drop any other iframe.
 const ALLOWED_IFRAME_HOSTS = ["www.youtube.com", "www.youtube-nocookie.com", "player.vimeo.com"];
@@ -27,42 +28,40 @@ export default function PostPage() {
   const [postInfo, setPostInfo] = useState(null);
   const { userInfo } = useContext(UserContext);
   const [error, setError] = useState("");
+  const [deleting, setDeleting] = useState(false);
   const { id } = useParams();
   const navigate = useNavigate();
 
   useEffect(() => {
-    fetch(`http://localhost:4000/post/${id}`)
-      .then(async (response) => {
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || "Failed to load post");
-        setPostInfo(data);
-      })
-      .catch((err) => setError(err.message));
+    setPostInfo(null);
+    setError("");
+    apiFetch(`/post/${id}`).then(({ ok, data, error }) => {
+      if (ok) setPostInfo(data);
+      else setError(error);
+    });
   }, [id]);
 
   async function deletePost() {
     if (!window.confirm("Delete this post? This cannot be undone.")) return;
-    const response = await fetch(`http://localhost:4000/post/${id}`, {
-      method: "DELETE",
-      credentials: "include",
-    });
-    if (response.ok) {
+    setDeleting(true);
+    const { ok, error } = await apiFetch(`/post/${id}`, { method: "DELETE" });
+    if (ok) {
       navigate("/");
     } else {
-      const data = await response.json().catch(() => ({}));
-      alert(data.error || "Failed to delete post");
+      setDeleting(false);
+      alert(error);
     }
   }
 
-  if (error) return <div className="post-page">{error}</div>;
-  if (!postInfo) return "";
+  if (error) return <p className="error">{error}</p>;
+  if (!postInfo) return <p className="status">Loading…</p>;
 
   const isAuthor = userInfo?.id && userInfo.id === postInfo.author?._id;
 
   return (
     <div className="post-page">
       <h1>{postInfo.title}</h1>
-      <time> {formatISO9075(new Date(postInfo.createdAt))} </time>
+      <time>{formatISO9075(new Date(postInfo.createdAt))}</time>
       <div className="author">by {postInfo.author?.username || "Unknown Author"}</div>
       {isAuthor && (
         <div className="edit-row">
@@ -83,13 +82,13 @@ export default function PostPage() {
             </svg>
             Edit this post
           </Link>
-          <button type="button" className="delete-btn" onClick={deletePost}>
-            Delete this post
+          <button type="button" className="delete-btn" onClick={deletePost} disabled={deleting}>
+            {deleting ? "Deleting…" : "Delete this post"}
           </button>
         </div>
       )}
       <div className="image">
-        <img src={`http://localhost:4000/${postInfo.cover}`} alt="" />
+        <img src={imageUrl(postInfo.cover)} alt={postInfo.title} />
       </div>
       <div
         className="content"
