@@ -11,10 +11,11 @@ export default function RegisterPage() {
         body: JSON.stringify({username, password}),
         headers: {'Content-Type':'application/json'},
     });
-    if(response.status === 200) {
-      alert('Registration Successful');
+    if (response.ok) {
+      alert('Registration Successful. You can now log in.');
     } else {
-      alert('Registration Failed');
+      const data = await response.json().catch(() => ({}));
+      alert(data.error || 'Registration Failed');
     }
   }
 
@@ -29,7 +30,7 @@ export default function RegisterPage() {
       />
       <input
         type="password"
-        placeholder="password"
+        placeholder="password (min 8 characters)"
         value={password}
         onChange={(ev) => setPassword(ev.target.value)}
       />

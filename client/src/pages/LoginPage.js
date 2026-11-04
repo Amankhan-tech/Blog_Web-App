@@ -22,7 +22,8 @@ export default function LoginPage() {
         setRedirect(true);
       })
     } else {
-      alert('Wrong Credentials')
+      const data = await response.json().catch(() => ({}));
+      alert(data.error || 'Wrong Credentials');
     }
   }
 

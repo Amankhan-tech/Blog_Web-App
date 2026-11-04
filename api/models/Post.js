@@ -1,14 +1,14 @@
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
 
-const PostSchema = new mongoose.Schema({
-  title: { type: String},
-  summary: { type: String},
-  content: { type: String },
-  cover: { type: String},
-  author: { type: Schema.Types.ObjectId, ref: 'User'},
+const PostSchema = new Schema({
+  title: { type: String, required: true, maxlength: 200 },
+  summary: { type: String, required: true, maxlength: 500 },
+  content: { type: String, required: true },
+  cover: { type: String, required: true },
+  author: { type: Schema.Types.ObjectId, ref: 'User', required: true },
 }, {
-  timestamps: true, // Optional: Adds createdAt and updatedAt fields
+  timestamps: true, // Adds createdAt and updatedAt fields
 });
 
 const Post = mongoose.model('Post', PostSchema);
