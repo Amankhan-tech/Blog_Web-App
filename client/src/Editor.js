@@ -1,37 +1,33 @@
 import ReactQuill from "react-quill";
 import "react-quill/dist/quill.snow.css";
 
+// Defined once, outside the component: ReactQuill doesn't support the
+// modules object changing between renders (it can reset the editor).
+const toolbarOptions = [
+  ["bold", "italic", "underline", "strike"], // toggled buttons
+  ["blockquote", "code-block"],
+  ["link", "image", "video"], // "formula" needs the KaTeX library, which isn't installed
+
+  [{ header: 1 }, { header: 2 }], // custom button values
+  [{ list: "ordered" }, { list: "bullet" }, { list: "check" }],
+  [{ script: "sub" }, { script: "super" }], // superscript/subscript
+  [{ indent: "-1" }, { indent: "+1" }], // outdent/indent
+  [{ direction: "rtl" }], // text direction
+
+  [{ size: ["small", false, "large", "huge"] }], // custom dropdown
+  [{ header: [1, 2, 3, 4, 5, 6, false] }],
+
+  [{ color: [] }, { background: [] }], // dropdown with defaults from theme
+  [{ font: [] }],
+  [{ align: [] }],
+
+  ["clean"], // remove formatting button
+];
+
+const modules = {
+  toolbar: toolbarOptions,
+};
+
 export default function Editor({ value, onChange }) {
-  const toolbarOptions = [
-    ["bold", "italic", "underline", "strike"], // toggled buttons
-    ["blockquote", "code-block"],
-    ["link", "image", "video", "formula"],
-
-    [{ header: 1 }, { header: 2 }], // custom button values
-    [{ list: "ordered" }, { list: "bullet" }, { list: "check" }],
-    [{ script: "sub" }, { script: "super" }], // superscript/subscript
-    [{ indent: "-1" }, { indent: "+1" }], // outdent/indent
-    [{ direction: "rtl" }], // text direction
-
-    [{ size: ["small", false, "large", "huge"] }], // custom dropdown
-    [{ header: [1, 2, 3, 4, 5, 6, false] }],
-
-    [{ color: [] }, { background: [] }], // dropdown with defaults from theme
-    [{ font: [] }],
-    [{ align: [] }],
-
-    ["clean"], // remove formatting button
-  ];
-
-  const modules = {
-    toolbar: toolbarOptions,
-  };
-
-  return (
-    <ReactQuill
-      value={value} // Pass the value prop correctly
-      modules={modules} // Pass the toolbar modules
-      onChange={onChange} // Pass the onChange prop correctly
-    />
-  );
+  return <ReactQuill theme="snow" value={value} modules={modules} onChange={onChange} />;
 }

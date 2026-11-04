@@ -40,6 +40,56 @@ header a.logo {
 header nav{
   display: flex;
   gap: 15px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+header nav .greeting{
+  color: #888;
+}
+
+/* A <button> that looks like the nav links (used for Logout). */
+button.link-button{
+  width: auto;
+  display: inline;
+  background: none;
+  color: inherit;
+  padding: 0;
+  font: inherit;
+}
+
+button:disabled{
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+p.error, p.success, p.status{
+  padding: 10px 12px;
+  border-radius: 5px;
+  margin: 0 0 10px;
+}
+p.error{
+  background-color: #fdecea;
+  color: #b42318;
+}
+p.success{
+  background-color: #e7f6ec;
+  color: #1e7b3a;
+}
+p.status{
+  color: #888;
+  text-align: center;
+}
+
+form.post-form label.file-label{
+  display: block;
+  font-size: .85rem;
+  color: #555;
+  margin-bottom: 5px;
+}
+form.post-form label.file-label input{
+  margin-top: 4px;
 }
 
 div.post{
@@ -74,7 +124,7 @@ div.post p.info{
   gap: 10px;
 }
 
-div.post p.info a.author{
+div.post p.info .author{
    color: #333; 
 }
 
@@ -155,7 +205,11 @@ div.post-page div.content p{
 }
 
 div.edit-row{
-  text-align: center;
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+  flex-wrap: wrap;
+  gap: 10px;
   margin-bottom: 10px;
 }
 
@@ -173,7 +227,8 @@ div.post-page a.edit-btn{
 div.post-page button.delete-btn{
   width: auto;
   display: inline-flex;
-  margin-left: 10px;
+  align-items: center;
+  font: inherit;
   padding: 15px 30px;
   border-radius: 5px;
   background-color: #b42318;

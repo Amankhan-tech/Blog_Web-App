@@ -1,52 +1,55 @@
 import { useContext, useState } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { UserContext } from "../UserContext";
+import { postJson } from "../api";
 
 export default function LoginPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [redirect, setRedirect] = useState(false);
-  const {setUserInfo} = useContext(UserContext)
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const { userInfo, setUserInfo } = useContext(UserContext);
+  const location = useLocation();
 
   async function login(ev) {
     ev.preventDefault();
-    const response =  await fetch('http://localhost:4000/login', {
-        method: 'POST',
-        body: JSON.stringify({username, password}),
-        headers: {'Content-Type':'application/json'},
-        credentials: 'include', 
-    })
-    if(response.ok) {
-      response.json().then(userInfo => {
-        setUserInfo(userInfo);
-        setRedirect(true);
-      })
-    } else {
-      const data = await response.json().catch(() => ({}));
-      alert(data.error || 'Wrong Credentials');
-    }
+    setError("");
+    setSubmitting(true);
+    const { ok, data, error } = await postJson("/login", { username, password });
+    setSubmitting(false);
+    if (ok) setUserInfo(data);
+    else setError(error);
   }
 
-  if (redirect) {
-    return <Navigate to={'/'} />
+  // Already logged in (or just logged in): go back where they came from.
+  if (userInfo) {
+    return <Navigate to={location.state?.from || "/"} replace />;
   }
 
   return (
     <form className="login" onSubmit={login}>
       <h1>Login</h1>
+      {location.state?.registered && !error && (
+        <p className="success">Account created. You can log in now.</p>
+      )}
+      {error && <p className="error">{error}</p>}
       <input
         type="text"
         placeholder="username"
+        autoComplete="username"
+        required
         value={username}
         onChange={(ev) => setUsername(ev.target.value)}
       />
       <input
         type="password"
         placeholder="password"
+        autoComplete="current-password"
+        required
         value={password}
         onChange={(ev) => setPassword(ev.target.value)}
       />
-      <button>Login</button>
+      <button disabled={submitting}>{submitting ? "Logging in…" : "Login"}</button>
     </form>
   );
 }
