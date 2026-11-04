@@ -1,62 +1,113 @@
+const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
+
+// Load .env before reading any config. Look next to this file first (api/.env),
+// then in the folder the server was started from (e.g. the repo root).
+require('dotenv').config({ path: [path.join(__dirname, '.env'), path.resolve('.env')] });
+
 const express = require('express');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const mongoSanitize = require('express-mongo-sanitize');
-const dotenv = require('dotenv');
-const { mongoose } = require('mongoose');
+const mongoose = require('mongoose');
 const cookieParser = require('cookie-parser');
 const multer = require('multer');
-const fs = require('fs');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
-const User = require("./models/User");
-const Post = require("./models/Post");
+const User = require('./models/User');
+const Post = require('./models/Post');
 
-dotenv.config();
+// ---------------------------------------------------------------------------
+// Config — fail fast instead of silently running with unsafe defaults
+// ---------------------------------------------------------------------------
+const { MONGODB_URI, JWT_SECRET } = process.env;
+const PORT = process.env.PORT || 4000;
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 
-const app = express();
+const missing = ['MONGODB_URI', 'JWT_SECRET'].filter((key) => !process.env[key]);
+if (missing.length) {
+  console.error(`Missing required environment variable(s): ${missing.join(', ')}`);
+  console.error('Create a .env file (see README) and try again.');
+  process.exit(1);
+}
+
 const salt = bcrypt.genSaltSync(10);
-const secret = process.env.JWT_SECRET || 'fallback_secret';
 
-const uploadMiddleware = multer({ dest: 'uploads/' });
+// ---------------------------------------------------------------------------
+// File uploads
+// ---------------------------------------------------------------------------
+// Always resolve relative to this file so uploads land in api/uploads no matter
+// which folder the server is started from.
+const UPLOAD_DIR = path.join(__dirname, 'uploads');
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-// Middleware
-app.use(cors({ origin: process.env.FRONTEND_URL, credentials: true }));
+const MIME_EXTENSIONS = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif' };
+const FILE_SIZE_LIMIT = 5 * 1024 * 1024; // 5 MB
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: UPLOAD_DIR,
+    filename: (req, file, cb) => {
+      cb(null, `${crypto.randomBytes(16).toString('hex')}.${MIME_EXTENSIONS[file.mimetype]}`);
+    },
+  }),
+  limits: { fileSize: FILE_SIZE_LIMIT, files: 1 },
+  fileFilter: (req, file, cb) => {
+    if (!MIME_EXTENSIONS[file.mimetype]) {
+      const err = new Error('Invalid file type. Only JPEG, PNG and GIF are allowed.');
+      err.status = 400;
+      return cb(err);
+    }
+    cb(null, true);
+  },
+});
+
+// Stored in the DB as "uploads/<name>" — the same format older posts use.
+const coverPathFor = (file) => `uploads/${file.filename}`;
+
+const removeUpload = (coverPath) => {
+  if (!coverPath) return;
+  // basename() keeps deletes inside UPLOAD_DIR even if a stored path is odd.
+  fs.unlink(path.join(UPLOAD_DIR, path.basename(coverPath)), () => {});
+};
+
+// ---------------------------------------------------------------------------
+// App + middleware
+// ---------------------------------------------------------------------------
+const app = express();
+
+app.use(cors({ origin: FRONTEND_URL, credentials: true }));
 app.use(express.json({ limit: '10kb' }));
 app.use(cookieParser());
 app.use(mongoSanitize());
-app.use('/uploads', express.static(__dirname + '/uploads'));
+app.use('/uploads', express.static(UPLOAD_DIR));
 
-// Rate limiting for API endpoints
 const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100 });
 app.use('/api', limiter);
 
-// MongoDB Connection
-mongoose.connect(process.env.MONGODB_URI || "your-default-mongodb-uri");
+// Express 4 does not catch errors thrown in async handlers; this forwards them
+// to the error handler instead of crashing the process.
+const asyncHandler = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
-// Token Verification Middleware
 const verifyToken = (req, res, next) => {
   const { token } = req.cookies;
   if (!token) {
-    return res.status(401).json({ error: "Unauthorized: Token is required" });
+    return res.status(401).json({ error: 'Unauthorized: Token is required' });
   }
-  jwt.verify(token, secret, {}, (err, info) => {
+  jwt.verify(token, JWT_SECRET, {}, (err, info) => {
     if (err) {
-      return res.status(403).json({ error: "Invalid token" });
+      return res.status(403).json({ error: 'Invalid token' });
     }
     req.user = info;
     next();
   });
 };
 
-// Error Handling Middleware
-app.use((err, req, res, next) => {
-  console.error("Error:", err.message);
-  res.status(err.status || 500).json({ error: err.message || "Internal Server Error" });
-});
-
-// Routes
-app.post("/register", async (req, res) => {
+// ---------------------------------------------------------------------------
+// Auth routes
+// ---------------------------------------------------------------------------
+app.post('/register', async (req, res) => {
   const { username, password } = req.body;
   try {
     const userDoc = await User.create({
@@ -70,57 +121,46 @@ app.post("/register", async (req, res) => {
   }
 });
 
-app.post("/login", async (req, res) => {
+app.post('/login', asyncHandler(async (req, res) => {
   const { username, password } = req.body;
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Username and password are required' });
+  }
   const userDoc = await User.findOne({ username });
   if (!userDoc) {
-    return res.status(404).json({ error: "User not found" });
+    return res.status(404).json({ error: 'User not found' });
   }
   const passOk = bcrypt.compareSync(password, userDoc.password);
   if (!passOk) {
-    return res.status(400).json({ error: "Invalid credentials" });
+    return res.status(400).json({ error: 'Invalid credentials' });
   }
-  jwt.sign({ username, id: userDoc._id }, secret, {}, (err, token) => {
-    if (err) throw err;
-    res.cookie("token", token).json({
-      id: userDoc._id,
-      username,
-    });
+  const token = jwt.sign({ username, id: userDoc._id }, JWT_SECRET);
+  res.cookie('token', token).json({
+    id: userDoc._id,
+    username,
   });
-});
+}));
 
-app.get("/profile", verifyToken, (req, res) => {
+app.get('/profile', verifyToken, (req, res) => {
   res.json(req.user);
 });
 
-app.post("/logout", (req, res) => {
-  res.cookie("token", "").json("ok");
+app.post('/logout', (req, res) => {
+  res.cookie('token', '').json('ok');
 });
 
-const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/gif'];
-const fileSizeLimit = 5 * 1024 * 1024; // 5 MB
-
-app.post("/post", uploadMiddleware.single("file"), verifyToken, async (req, res) => {
-  const { originalname, path, mimetype, size } = req.file;
+// ---------------------------------------------------------------------------
+// Post routes
+// ---------------------------------------------------------------------------
+// verifyToken runs BEFORE multer so anonymous requests never write to disk.
+app.post('/post', verifyToken, upload.single('file'), asyncHandler(async (req, res) => {
+  const { title, summary, content } = req.body;
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
   }
-  if (!allowedMimeTypes.includes(mimetype)) {
-    return res.status(400).json({ error: 'Invalid file type' });
-  }
-  if (size > fileSizeLimit) {
-    return res.status(400).json({ error: 'File size exceeds limit' });
-  }
-
-  const parts = originalname.split(".");
-  const ext = parts[parts.length - 1];
-  const newPath = path + "." + ext;
-
-  fs.renameSync(path, newPath);
-
-  const { title, summary, content } = req.body;
   if (!title || !summary || !content) {
-    return res.status(400).json({ error: "All fields are required" });
+    removeUpload(coverPathFor(req.file));
+    return res.status(400).json({ error: 'All fields are required' });
   }
 
   try {
@@ -128,37 +168,113 @@ app.post("/post", uploadMiddleware.single("file"), verifyToken, async (req, res)
       title,
       summary,
       content,
-      cover: newPath,
+      cover: coverPathFor(req.file),
       author: req.user.id,
     });
     res.json(postDoc);
-  } catch (error) {
-    console.error("Error creating post:", error);
-    res.status(500).json({ error: "Failed to create the post" });
+  } catch (err) {
+    removeUpload(coverPathFor(req.file));
+    throw err;
   }
-});
+}));
 
-app.get("/post", async (req, res) => {
-  const posts = await Post.find().populate("author", ["username"]).sort({ createdAt: -1 }).limit(20);
-  res.json(posts);
-});
+app.put('/post', verifyToken, upload.single('file'), asyncHandler(async (req, res) => {
+  const { id, title, summary, content } = req.body;
+  const newCover = req.file ? coverPathFor(req.file) : null;
+  const reject = (status, error) => {
+    removeUpload(newCover);
+    return res.status(status).json({ error });
+  };
 
-app.get('/post/:id', async (req, res) => {
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return reject(400, 'Invalid post ID');
+  }
+  if (!title || !summary || !content) {
+    return reject(400, 'All fields are required');
+  }
+
+  const postDoc = await Post.findById(id);
+  if (!postDoc) {
+    return reject(404, 'Post not found');
+  }
+  if (String(postDoc.author) !== String(req.user.id)) {
+    return reject(403, 'You can only edit your own posts');
+  }
+
+  const oldCover = postDoc.cover;
+  postDoc.title = title;
+  postDoc.summary = summary;
+  postDoc.content = content;
+  if (newCover) postDoc.cover = newCover;
+
+  try {
+    await postDoc.save();
+  } catch (err) {
+    removeUpload(newCover);
+    throw err;
+  }
+  if (newCover) removeUpload(oldCover);
+
+  res.json(postDoc);
+}));
+
+app.delete('/post/:id', verifyToken, asyncHandler(async (req, res) => {
   const { id } = req.params;
   if (!mongoose.Types.ObjectId.isValid(id)) {
     return res.status(400).json({ error: 'Invalid post ID' });
   }
-
-  try {
-    const postDoc = await Post.findById(id).populate('author', ['username']);
-    if (!postDoc) {
-      return res.status(404).json({ error: 'Post not found' });
-    }
-    res.json(postDoc);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
+  const postDoc = await Post.findById(id);
+  if (!postDoc) {
+    return res.status(404).json({ error: 'Post not found' });
   }
+  if (String(postDoc.author) !== String(req.user.id)) {
+    return res.status(403).json({ error: 'You can only delete your own posts' });
+  }
+  await postDoc.deleteOne();
+  removeUpload(postDoc.cover);
+  res.json({ ok: true });
+}));
+
+app.get('/post', asyncHandler(async (req, res) => {
+  const posts = await Post.find().populate('author', ['username']).sort({ createdAt: -1 }).limit(20);
+  res.json(posts);
+}));
+
+app.get('/post/:id', asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ error: 'Invalid post ID' });
+  }
+  const postDoc = await Post.findById(id).populate('author', ['username']);
+  if (!postDoc) {
+    return res.status(404).json({ error: 'Post not found' });
+  }
+  res.json(postDoc);
+}));
+
+// ---------------------------------------------------------------------------
+// Error handler — must be registered AFTER all routes
+// ---------------------------------------------------------------------------
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    const message = err.code === 'LIMIT_FILE_SIZE' ? 'File size exceeds 5 MB limit' : err.message;
+    return res.status(400).json({ error: message });
+  }
+  const status = err.status || 500;
+  if (status >= 500) console.error('Error:', err);
+  res.status(status).json({ error: status >= 500 ? 'Internal Server Error' : err.message });
 });
 
-app.listen(4000, () => console.log('Server running on port 4000'));
+// ---------------------------------------------------------------------------
+// Start
+// ---------------------------------------------------------------------------
+mongoose
+  .connect(MONGODB_URI)
+  .then(() => {
+    app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+  })
+  .catch((err) => {
+    console.error('Failed to connect to MongoDB:', err.message);
+    process.exit(1);
+  });
